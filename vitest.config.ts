@@ -29,6 +29,11 @@ export default defineConfig({
     // individual tests that take ~2s in isolation exceed the 5s default and
     // flake. 30s matches the slowest observed contention multiple; genuinely
     // hung tests still fail, just later.
+    // 55 of 384 files spawn git/hippo/nested-vitest children, so the fork
+    // default of one worker per core oversubscribes a big box several times
+    // over and starves them at random. CI passes only because its runners
+    // have 2-4 cores; this makes that bound deliberate instead of accidental.
+    poolOptions: { forks: { maxForks: 6 } },
     testTimeout: 30_000,
     // Same contention, same ceiling: setup hooks spawn MORE child processes
     // than most tests (autolearn's beforeEach forks 12 git + 1 CLI), so the
