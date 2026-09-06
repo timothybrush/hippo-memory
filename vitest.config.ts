@@ -24,20 +24,12 @@ export default defineConfig({
     // module scope above covers the main process. Both are required.
     env: { HIPPO_HOME: isolatedHippoHome },
     globalSetup: ['tests/_real-store-guard.ts'],
-    // Real-DB suite: every test hits SQLite on disk, and Vitest 3's fork pool
-    // runs files in parallel, so under worker contention (Windows especially)
-    // individual tests that take ~2s in isolation exceed the 5s default and
-    // flake. 30s matches the slowest observed contention multiple; genuinely
-    // hung tests still fail, just later.
-    // 55 of 384 files spawn git/hippo/nested-vitest children, so the fork
-    // default of one worker per core oversubscribes a big box several times
-    // over and starves them at random. CI passes only because its runners
-    // have 2-4 cores; this makes that bound deliberate instead of accidental.
+    // 55 of 384 files spawn git/hippo/nested-vitest children, so one fork per
+    // core oversubscribes a big box. Detail: CHANGELOG 1.38.3.
     poolOptions: { forks: { maxForks: 6 } },
+    // Real-SQLite tests that take ~2s alone blow the 5s default under that
+    // contention, and setup hooks fork more children still, so both get 30s.
     testTimeout: 30_000,
-    // Same contention, same ceiling: setup hooks spawn MORE child processes
-    // than most tests (autolearn's beforeEach forks 12 git + 1 CLI), so the
-    // 10s vitest default starved them first and no release could publish.
     hookTimeout: 30_000,
   },
 });
