@@ -30,5 +30,9 @@ export default defineConfig({
     // flake. 30s matches the slowest observed contention multiple; genuinely
     // hung tests still fail, just later.
     testTimeout: 30_000,
+    // Same contention, same ceiling: setup hooks spawn MORE child processes
+    // than most tests (autolearn's beforeEach forks 12 git + 1 CLI), so the
+    // 10s vitest default starved them first and no release could publish.
+    hookTimeout: 30_000,
   },
 });
