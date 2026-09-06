@@ -189,7 +189,7 @@ export { classifyOriginProject } from './project-identity.js';
  * - S3 origin partition: other-project rows are excluded unless
  *   `includeCrossProject`.
  */
-export function ambientAdmitEntry(
+function ambientAdmitEntry(
   e: MemoryEntry,
   currentProjectName: string,
   includeCrossProject: boolean,
@@ -2348,6 +2348,10 @@ export interface ContextResult {
   activeSnapshot?: TaskSnapshot | null;
   sessionHandoff?: SessionHandoff | null;
   recentEvents?: SessionEvent[];
+  /** The ambient landscape summary over the admitted entries. Present only
+   *  when the store's ambient config is on, the caller is not pinned-only,
+   *  and at least one entry was admitted. */
+  ambientState?: AmbientState;
 }
 
 /**
@@ -2406,7 +2410,8 @@ export async function getContext(
   // envelope-scope request (api.recall's exact-match semantics don't apply).
   // S3: origin partition - other-project memories are excluded unless the
   // caller explicitly asks for them (crossProject) or isolation is disabled.
-  const isolationEnabled = loadConfig(ctx.hippoRoot).contextProjectIsolation !== false;
+  const config = loadConfig(ctx.hippoRoot);
+  const isolationEnabled = config.contextProjectIsolation !== false;
   const currentProjectName =
     opts.currentProject ?? resolveProjectIdentity(process.cwd()).name;
   const includeCrossProject = opts.crossProject === true || !isolationEnabled;
@@ -2414,6 +2419,10 @@ export async function getContext(
     ambientAdmitEntry(e, currentProjectName, includeCrossProject);
   localEntries = localEntries.filter(ambientAdmit);
   globalEntries = globalEntries.filter(ambientAdmit);
+
+  // Computed below, after markRetrieved runs, so avgStrength reflects the
+  // post-retrieval strengths rather than a stale pre-mutation snapshot.
+  let ambientState: AmbientState | undefined;
 
   // DF1 T2: bounded read — an orphaned snapshot (no later pre-compact
   // superseded it, no session-end closed it) must age out of this ambient
@@ -2807,6 +2816,17 @@ export async function getContext(
       ...s,
       entry: updatedEntries.find((u) => u.id === s.entry.id) ?? s.entry,
     }));
+
+    // Overlay by id (no re-read) so avgStrength reflects post-retrieval strength.
+    if (config.ambient.enabled) {
+      const updatedById = new Map(updatedEntries.map((u) => [u.id, u]));
+      const overlaid = [...localEntries, ...globalEntries].map(
+        (e) => updatedById.get(e.id) ?? e,
+      );
+      if (overlaid.length > 0) {
+        ambientState = computeAmbientState(overlaid);
+      }
+    }
   }
 
   return {
@@ -2815,6 +2835,7 @@ export async function getContext(
     activeSnapshot: activeSnapshot ?? undefined,
     sessionHandoff: sessionHandoff ?? undefined,
     recentEvents: recentSessionEvents.length > 0 ? recentSessionEvents : undefined,
+    ambientState,
   };
 }
 
